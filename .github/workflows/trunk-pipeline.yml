@@ -1,0 +1,136 @@
+name: CI & CD Trunk - Trunk CD Pipeline to DEV environment
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - "CHANGELOG.md"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/**"
+
+# ------------------
+# Application Values
+# ------------------
+env:
+  SONAR_ORG: bfi-finance
+  SONAR_PROJECT_KEY: bfi-finance_approver-platform-fe
+  STORAGE_BUCKET_NAME: co-dev-bravo-bfi-co-id
+
+jobs:
+  # -----------------------------------
+  # Application Security Scan with SNYK
+  # -----------------------------------
+  security-analysis:
+    name: Security Scan - SNYK
+    runs-on: ubuntu-latest
+    container: snyk/snyk:node-16
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+
+      - name: Check vulnerabilities with Snyk
+        run: |
+          snyk test --org=${SNYK_ORG} --all-projects --detection-depth=8 --print-deps --remote-repo-url=${SNYK_REPO} --severity-threshold=high || true
+      
+      - name: Monitor/report with Snyk App UI
+        run: |
+          snyk monitor --org=${SNYK_ORG} ---all-projects --detection-depth=8 --print-deps --remote-repo-url=${SNYK_REPO} || true
+
+
+  # -----------------------------------------------
+  # Application Static code analysis with SonarQube
+  # -----------------------------------------------
+  static-analysis:
+    name: Static Analysis - SonarQube
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0 # THIS IS NEEDED HERE (Sonar needs full history for BLAME)
+
+      - name: Verify with SonarQube
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Needed to get PR information, if any
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
+            -Dsonar.organization=${{ env.SONAR_ORG }}
+
+
+  # --------------------------------
+  # Test Code with unit tests
+  # --------------------------------
+  unit_test:
+    needs: [security-analysis, static-analysis]
+    name: Run Unit Tests - NPM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+
+      - name: Set up NodeJS
+        uses: actions/setup-node@v2
+        with:
+          node-version: "16"
+
+      - name: Cache NPM packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Run Unit-Tests
+        run: make unit-test-and-report
+        continue-on-error: true
+
+
+  # --------------------------------
+  # Lint and compile code with NPM
+  # --------------------------------
+  compile_code:
+    needs: [unit_test]
+    name: Compile and Deploy Bundel JS - NPM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+
+      - name: Set up NodeJS
+        uses: actions/setup-node@v2
+        with:
+          node-version: "16"
+
+      - name: Cache NPM packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+            
+      - name: Build and Compile (DEV)
+        env:
+          CI: false
+        run: |
+          make build-dev
+          
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v0
+        with:
+          project_id: ${{ secrets.BRAVO_FE_DEV_GCP_PROJECT }}
+          service_account_key: ${{ secrets.BRAVO_FE_DEV_GCP_SA_KEY }}
+          export_default_credentials: true
+
+      - name: Deploy to DEV with Upload to Google Storage Bucket
+        run: |-
+          gsutil rsync -r ./build gs://${{ env.STORAGE_BUCKET_NAME }}
+          gsutil setmeta -h "Cache-Control:no-store" gs://${{ env.STORAGE_BUCKET_NAME }}/index.html

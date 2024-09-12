@@ -1,0 +1,29 @@
+name: Tag Release - Generate Changelog and Tag Release
+on:
+  workflow_dispatch:
+    branches: [master]
+    inputs:
+      tag:
+        description: 'Tag to be used for this promotion'
+
+jobs:
+  # -----------------------------------
+  # Set git TAG and generate change log
+  # -----------------------------------
+  tag_release_and_changelog:
+    name: Tag release and Generate Changelog
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout selected ref
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Set & Tag Version with Changelog
+        run: |
+          git config user.name bfibravo-bot
+          git config user.email bfi.bravoadmin@bfi.co.id
+          [ -z "${{ github.event.inputs.tag }}" ] && npx standard-version --commit-all || npx standard-version --commit-all --release-as ${{ github.event.inputs.tag }}
+          git push --follow-tags origin ${{ github.ref_name }}

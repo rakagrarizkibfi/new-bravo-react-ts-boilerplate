@@ -1,0 +1,61 @@
+name: UAT Tag Release - Update Release Manifest Tag Version
+on:
+  workflow_dispatch:
+    branches: [release*]
+    inputs:
+      tag:
+        description: 'Tag to be used for this promotion'
+        required: true
+
+# ------------------
+# Application Values
+# ------------------
+env:
+  SERVICE_NAME: approver_platform
+  STORAGE_BUCKET_NAME: co-uat-bravo-bfi-co-id
+
+jobs:
+  # --------------------------------------
+  # Update deployment spec to use this tag
+  # --------------------------------------
+  deployment-uat:
+    name: Compile and Deploy Bundel JS (UAT) - NPM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          ref: '${{ github.event.inputs.tag}}'
+
+      - name: Set up NodeJS
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+
+      - name: Get yarn cache directory path
+        id: yarn-cache-dir-path
+        run: echo "::set-output name=dir::$(yarn cache dir)"
+
+      - name: Restore or create yarn packages cache
+        uses: actions/cache@v3
+        id: yarn-cache
+        with:
+          path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
+
+      - name: Build and Compile (DEV)
+        run: make build-uat
+        env:
+          CI: false
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v0
+        with:
+          project_id: ${{ secrets.BRAVO_FE_UAT_GCP_PROJECT }}
+          service_account_key: ${{ secrets.BRAVO_FE_UAT_GCP_SA_KEY }}
+          export_default_credentials: true
+
+      - name: Deploy to UAT with Upload to Google Storage Bucket
+        run: |-
+          gsutil rsync -r ./build gs://${{ env.STORAGE_BUCKET_NAME }}
