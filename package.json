@@ -143,8 +143,8 @@
     "@types/loadable__component": "^5.13.5",
     "@types/node": "^20.10.6",
     "@types/prismjs": "^1.26.0",
-    "@types/react": "^18.0.9",
-    "@types/react-dom": "^18.0.5",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
     "@types/react-helmet": "^6.1.9",
     "@types/redux-mock-store": "^1.0.3",
     "@types/styled-components": "^5.1.26",
@@ -185,5 +185,5 @@
       "prettier --write"
     ]
   },
-  "packageManager": "yarn@4.2.2"
+  "packageManager": "yarn@4.0.2"
 }

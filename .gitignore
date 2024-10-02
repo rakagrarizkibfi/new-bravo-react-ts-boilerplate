@@ -38,4 +38,5 @@ yarn.lock
 tsconfig.tsbuildinfo
 
 .env.yarn
+.env.dev
 package-lock.json
